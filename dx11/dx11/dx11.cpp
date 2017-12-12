@@ -3,13 +3,255 @@
 
 #include "stdafx.h"
 #include "dx11.h"
+#include <dxgi.h>
+#include <d3d11.h>
+#include <D3Dcompiler.h>
 
-#define MAX_LOADSTRING 100
+/////////////////////////////////////
+IDXGIFactory1 *g_pDXGIFactory = NULL;
+ID3D11Device *g_pd3d11Device = NULL;
+ID3D11DeviceContext *g_pd3dImmediateContext = NULL;
+IDXGISwapChain *g_pSwapChain = NULL;
+ID3D11VertexShader *g_pVSRenderUI11 = NULL;
+ID3D11PixelShader *g_pPSRenderUI11 = NULL;
+ID3D11PixelShader *g_pPSRenderUIUntex11 = NULL;
+ID3D11DepthStencilState *g_pDepthStencilStateUI11 = NULL;
+ID3D11RasterizerState *g_pRasterizerStateUI11 = NULL;
+ID3D11BlendState *g_pBlendStateUI11 = NULL;
+ID3D11SamplerState *g_pSamplerStateUI11 = NULL;
+/////////////////////////////////////
+
+CHAR g_strUIEffectFile [] = \
+"Texture2D g_Texture;"\
+""\
+"SamplerState Sampler"\
+"{"\
+"    Filter = MIN_MAG_MIP_LINEAR;"\
+"    AddressU = Wrap;"\
+"    AddressV = Wrap;"\
+"};"\
+""\
+"BlendState UIBlend"\
+"{"\
+"    AlphaToCoverageEnable = FALSE;"\
+"    BlendEnable[0] = TRUE;"\
+"    SrcBlend = SRC_ALPHA;"\
+"    DestBlend = INV_SRC_ALPHA;"\
+"    BlendOp = ADD;"\
+"    SrcBlendAlpha = ONE;"\
+"    DestBlendAlpha = ZERO;"\
+"    BlendOpAlpha = ADD;"\
+"    RenderTargetWriteMask[0] = 0x0F;"\
+"};"\
+""\
+"BlendState NoBlending"\
+"{"\
+"    BlendEnable[0] = FALSE;"\
+"    RenderTargetWriteMask[0] = 0x0F;"\
+"};"\
+""\
+"DepthStencilState DisableDepth"\
+"{"\
+"    DepthEnable = false;"\
+"};"\
+"DepthStencilState EnableDepth"\
+"{"\
+"    DepthEnable = true;"\
+"};"\
+"struct VS_OUTPUT"\
+"{"\
+"    float4 Pos : POSITION;"\
+"    float4 Dif : COLOR;"\
+"    float2 Tex : TEXCOORD;"\
+"};"\
+""\
+"VS_OUTPUT VS( float3 vPos : POSITION,"\
+"              float4 Dif : COLOR,"\
+"              float2 vTexCoord0 : TEXCOORD )"\
+"{"\
+"    VS_OUTPUT Output;"\
+""\
+"    Output.Pos = float4( vPos, 1.0f );"\
+"    Output.Dif = Dif;"\
+"    Output.Tex = vTexCoord0;"\
+""\
+"    return Output;"\
+"}"\
+""\
+"float4 PS( VS_OUTPUT In ) : SV_Target"\
+"{"\
+"    return g_Texture.Sample( Sampler, In.Tex ) * In.Dif;"\
+"}"\
+""\
+"float4 PSUntex( VS_OUTPUT In ) : SV_Target"\
+"{"\
+"    return In.Dif;"\
+"}"\
+""\
+"technique10 RenderUI"\
+"{"\
+"    pass P0"\
+"    {"\
+"        SetVertexShader( CompileShader( vs_4_0, VS() ) );"\
+"        SetGeometryShader( NULL );"\
+"        SetPixelShader( CompileShader( ps_4_0, PS() ) );"\
+"        SetDepthStencilState( DisableDepth, 0 );"\
+"        SetBlendState( UIBlend, float4( 0.0f, 0.0f, 0.0f, 0.0f ), 0xFFFFFFFF );"\
+"    }"\
+"}"\
+"technique10 RenderUIUntex"\
+"{"\
+"    pass P0"\
+"    {"\
+"        SetVertexShader( CompileShader( vs_4_0, VS() ) );"\
+"        SetGeometryShader( NULL );"\
+"        SetPixelShader( CompileShader( ps_4_0, PSUntex() ) );"\
+"        SetDepthStencilState( DisableDepth, 0 );"\
+"        SetBlendState( UIBlend, float4( 0.0f, 0.0f, 0.0f, 0.0f ), 0xFFFFFFFF );"\
+"    }"\
+"}"\
+"technique10 RestoreState"\
+"{"\
+"    pass P0"\
+"    {"\
+"        SetDepthStencilState( EnableDepth, 0 );"\
+"        SetBlendState( NoBlending, float4( 0.0f, 0.0f, 0.0f, 0.0f ), 0xFFFFFFFF );"\
+"    }"\
+"}";
+const UINT              g_uUIEffectFileSize = sizeof(g_strUIEffectFile);
+////////////////////////////
+void Init(HWND hwnd)
+{
+	/////////////////////////////////
+	HRESULT hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (LPVOID*) &g_pDXGIFactory);
+	/////////////////////////////////
+	D3D_FEATURE_LEVEL DeviceFeatureLevel = D3D_FEATURE_LEVEL_11_0, FeatureLevel;
+	hr = D3D11CreateDevice(NULL,
+		D3D_DRIVER_TYPE_HARDWARE,
+		(HMODULE) 0,
+		0,
+		&DeviceFeatureLevel,
+		1,
+		D3D11_SDK_VERSION,
+		&g_pd3d11Device,
+		&FeatureLevel,
+		&g_pd3dImmediateContext
+		);
+	///////////////////////////////////////
+	D3D11_RASTERIZER_DESC drd = {
+		D3D11_FILL_SOLID, //D3D11_FILL_MODE FillMode;
+		D3D11_CULL_BACK,//D3D11_CULL_MODE CullMode;
+		FALSE, //BOOL FrontCounterClockwise;
+		0, //INT DepthBias;
+		0.0f,//FLOAT DepthBiasClamp;
+		0.0f,//FLOAT SlopeScaledDepthBias;
+		TRUE,//BOOL DepthClipEnable;
+		FALSE,//BOOL ScissorEnable;
+		TRUE,//BOOL MultisampleEnable;
+		FALSE//BOOL AntialiasedLineEnable;        
+	};
+	ID3D11RasterizerState* pRS = NULL;
+	hr = g_pd3d11Device->CreateRasterizerState(&drd, &pRS);
+	g_pd3dImmediateContext->RSSetState(pRS);
+	//////////////////////////////////////////
+	//后备缓冲个数
+	DXGI_SWAP_CHAIN_DESC desc;
+	ZeroMemory(&desc, sizeof(DXGI_SWAP_CHAIN_DESC));
+	desc.BufferCount = 1;
+	//后备缓冲大小
+	desc.BufferDesc.Width = 800;
+	desc.BufferDesc.Height = 600;
+	//像素格式 归一化
+	desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	//立即刷新
+	desc.BufferDesc.RefreshRate.Numerator = 60;
+	desc.BufferDesc.RefreshRate.Denominator = 1;
+	//扫描线设置
+	desc.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
+	desc.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
+	//设为渲染目标缓冲
+	desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	//窗口模式
+	desc.Windowed = TRUE;
+	desc.OutputWindow = hwnd;
+	//不采用多重采样
+	desc.SampleDesc.Count = 1;
+	desc.SampleDesc.Quality = 0;
+	//后备缓冲内容呈现屏幕后，放弃其内容
+	desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+	//不设置标志
+	desc.Flags = 0;
+	hr = g_pDXGIFactory->CreateSwapChain(g_pd3d11Device, &desc, &g_pSwapChain);
+	///////////////////////////////////////////////////////
+	// Compile Shaders
+	ID3DBlob* pVSBlob = NULL;
+	ID3DBlob* pPSBlob = NULL;
+	ID3DBlob* pPSUntexBlob = NULL;
+	hr = D3DCompile(g_strUIEffectFile, g_uUIEffectFileSize, "none", NULL, NULL, "VS", "vs_4_0_level_9_1", D3D10_SHADER_ENABLE_BACKWARDS_COMPATIBILITY, 0, &pVSBlob, NULL);
+	hr = D3DCompile(g_strUIEffectFile, g_uUIEffectFileSize, "none", NULL, NULL, "PS", "ps_4_0_level_9_1", D3D10_SHADER_ENABLE_BACKWARDS_COMPATIBILITY, 0, &pPSBlob, NULL);
+	hr = D3DCompile(g_strUIEffectFile, g_uUIEffectFileSize, "none", NULL, NULL, "PSUntex", "ps_4_0_level_9_1", D3D10_SHADER_ENABLE_BACKWARDS_COMPATIBILITY, 0, &pPSUntexBlob, NULL);
+	// Create Shaders
+	hr = g_pd3d11Device->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), NULL, &g_pVSRenderUI11);
+	hr = g_pd3d11Device->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), NULL, &g_pPSRenderUI11);
+	hr = g_pd3d11Device->CreatePixelShader(pPSUntexBlob->GetBufferPointer(), pPSUntexBlob->GetBufferSize(), NULL, &g_pPSRenderUIUntex11);
+	// States
+	D3D11_DEPTH_STENCIL_DESC DSDesc;
+	ZeroMemory(&DSDesc, sizeof(D3D11_DEPTH_STENCIL_DESC));
+	DSDesc.DepthEnable = FALSE;
+	DSDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+	DSDesc.DepthFunc = D3D11_COMPARISON_LESS;
+	DSDesc.StencilEnable = FALSE;
+	hr = g_pd3d11Device->CreateDepthStencilState(&DSDesc, &g_pDepthStencilStateUI11);
+	//
+	D3D11_RASTERIZER_DESC RSDesc;
+	RSDesc.AntialiasedLineEnable = FALSE;
+	RSDesc.CullMode = D3D11_CULL_BACK;
+	RSDesc.DepthBias = 0;
+	RSDesc.DepthBiasClamp = 0.0f;
+	RSDesc.DepthClipEnable = TRUE;
+	RSDesc.FillMode = D3D11_FILL_SOLID;
+	RSDesc.FrontCounterClockwise = FALSE;
+	RSDesc.MultisampleEnable = TRUE;
+	RSDesc.ScissorEnable = FALSE;
+	RSDesc.SlopeScaledDepthBias = 0.0f;
+	hr = g_pd3d11Device->CreateRasterizerState(&RSDesc, &g_pRasterizerStateUI11);
+	//
+	D3D11_BLEND_DESC BSDesc;
+	ZeroMemory(&BSDesc, sizeof(D3D11_BLEND_DESC));
+	BSDesc.RenderTarget[0].BlendEnable = TRUE;
+	BSDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+	BSDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+	BSDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+	BSDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+	BSDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+	BSDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+	BSDesc.RenderTarget[0].RenderTargetWriteMask = 0x0F;
+	hr = g_pd3d11Device->CreateBlendState(&BSDesc, &g_pBlendStateUI11);
+	//
+	D3D11_SAMPLER_DESC SSDesc;
+	ZeroMemory(&SSDesc, sizeof(D3D11_SAMPLER_DESC));
+	SSDesc.Filter = D3D11_FILTER_ANISOTROPIC;
+	SSDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+	SSDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+	SSDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+	SSDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+	SSDesc.MaxAnisotropy = 16;
+	SSDesc.MinLOD = 0;
+	SSDesc.MaxLOD = D3D11_FLOAT32_MAX;
+	if (g_pd3d11Device->GetFeatureLevel() < D3D_FEATURE_LEVEL_9_3) 
+	{
+		SSDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		SSDesc.MaxAnisotropy = 0;
+	}
+	hr = g_pd3d11Device->CreateSamplerState(&SSDesc, &g_pSamplerStateUI11);
+
+}
+/////////////////////////////////////
 
 // 全局变量: 
 HINSTANCE hInst;								// 当前实例
-TCHAR szTitle[MAX_LOADSTRING];					// 标题栏文本
-TCHAR szWindowClass[MAX_LOADSTRING];			// 主窗口类名
+TCHAR szTitle[100];					// 标题栏文本
+TCHAR szWindowClass[100];			// 主窗口类名
 
 // 此代码模块中包含的函数的前向声明: 
 ATOM				MyRegisterClass(HINSTANCE hInstance);
@@ -26,12 +268,14 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 	UNREFERENCED_PARAMETER(lpCmdLine);
 
  	// TODO:  在此放置代码。
+
+	////////////////////////////////
 	MSG msg;
 	HACCEL hAccelTable;
 
 	// 初始化全局字符串
-	LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-	LoadString(hInstance, IDC_DX11, szWindowClass, MAX_LOADSTRING);
+	LoadString(hInstance, IDS_APP_TITLE, szTitle, 100);
+	LoadString(hInstance, IDC_DX11, szWindowClass, 100);
 	MyRegisterClass(hInstance);
 
 	// 执行应用程序初始化: 
@@ -154,6 +398,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_DESTROY:
 		PostQuitMessage(0);
+		break;
+	case WM_CREATE:
+		Init(hWnd);
 		break;
 	default:
 		return DefWindowProc(hWnd, message, wParam, lParam);
