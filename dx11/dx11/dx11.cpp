@@ -7,6 +7,11 @@
 #include <d3d11.h>
 #include <D3Dcompiler.h>
 
+#include "d3dx11.h"
+
+#include <atlstr.h>
+
+
 /////////////////////////////////////
 IDXGIFactory1 *g_pDXGIFactory = NULL;
 ID3D11Device *g_pd3d11Device = NULL;
@@ -244,7 +249,30 @@ void Init(HWND hwnd)
 		SSDesc.MaxAnisotropy = 0;
 	}
 	hr = g_pd3d11Device->CreateSamplerState(&SSDesc, &g_pSamplerStateUI11);
+	// 加载一张图片
+	ID3D11Resource *pRes = NULL;
+	D3DX11_IMAGE_LOAD_INFO loadInfo;
+	loadInfo.Width = D3DX11_DEFAULT;
+	loadInfo.Height = D3DX11_DEFAULT;
+	loadInfo.Depth = D3DX11_DEFAULT;
+	loadInfo.FirstMipLevel = 0;
+	loadInfo.MipLevels = 1;
+	loadInfo.Usage = D3D11_USAGE_DEFAULT;
+	loadInfo.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+	loadInfo.CpuAccessFlags = 0;
+	loadInfo.MiscFlags = 0;
+	loadInfo.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	loadInfo.Filter = D3DX11_FILTER_NONE;
+	loadInfo.MipFilter = D3DX11_FILTER_NONE;
+	loadInfo.pSrcInfo = NULL;
 
+	// 图片路径
+	CString path;
+	::GetModuleFileName(NULL, path.GetBufferSetLength(MAX_PATH), MAX_PATH);
+	path = path.Left(path.ReverseFind(L'\\')) + L"\\aa.png";
+	//
+	hr = D3DX11CreateTextureFromFile(g_pd3d11Device, path, &loadInfo, NULL, &pRes, NULL);
+	hr = pRes->QueryInterface(__uuidof(ID3D11Texture2D), (LPVOID*) ppTexture);
 }
 /////////////////////////////////////
 
